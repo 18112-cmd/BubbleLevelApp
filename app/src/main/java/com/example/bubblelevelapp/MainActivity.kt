@@ -13,10 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,7 +26,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.bubblelevelapp.ui.theme.BubbleLevelAppTheme
-import kotlin.math.atan2
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -40,6 +36,10 @@ class MainActivity : ComponentActivity() {
     private var angleX by mutableStateOf(0f)
     private var angleY by mutableStateOf(0f)
     private var isFlat by mutableStateOf(false)
+
+    // Maintain the last 500 sensor values
+    private val angleHistoryX = mutableListOf<Float>()
+    private val angleHistoryY = mutableListOf<Float>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,9 +60,15 @@ class MainActivity : ComponentActivity() {
                     // Detect if device is flat
                     isFlat = z > 9.0 || z < -9.0
 
-                    // Calculate tilt angles for X and Y axes, and invert X for intuitive movement
-                    angleX = -x.coerceIn(-10f, 10f) // Left-right tilt
-                    angleY = y.coerceIn(-10f, 10f)  // Up-down tilt
+                    // Calculate tilt angles for X and Y axes
+                    angleX = -x.coerceIn(-10f, 10f) // Invert X for intuitive movement
+                    angleY = y.coerceIn(-10f, 10f)
+
+                    // Maintain last 500 sensor values
+                    if (angleHistoryX.size >= 500) angleHistoryX.removeAt(0)
+                    if (angleHistoryY.size >= 500) angleHistoryY.removeAt(0)
+                    angleHistoryX.add(angleX)
+                    angleHistoryY.add(angleY)
 
                     Log.d("BubbleLevel", "AngleX: $angleX, AngleY: $angleY, Flat: $isFlat")
                 }
@@ -73,7 +79,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             BubbleLevelAppTheme {
-                BubbleLevelScreen(angleX, angleY, isFlat)
+                BubbleLevelScreen(angleX, angleY, isFlat, angleHistoryX, angleHistoryY)
             }
         }
     }
@@ -89,7 +95,13 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun BubbleLevelScreen(angleX: Float, angleY: Float, isFlat: Boolean) {
+    fun BubbleLevelScreen(
+        angleX: Float,
+        angleY: Float,
+        isFlat: Boolean,
+        angleHistoryX: List<Float>,
+        angleHistoryY: List<Float>
+    ) {
         val configuration = LocalConfiguration.current
         val orientation = configuration.orientation
 
@@ -104,7 +116,10 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.bodyLarge
                 )
             } else {
-                BubbleLevel2D(angleX = angleX, angleY = angleY)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BubbleLevel2D(angleX, angleY)
+                    MaxMinValues(angleHistoryX, angleHistoryY)
+                }
             }
         }
     }
@@ -118,25 +133,23 @@ class MainActivity : ComponentActivity() {
 
         // Calculate bubble offset based on angle
         val bubbleOffsetX = with(LocalDensity.current) {
-            val normalizedX = angleX / 10f // Normalize to [-1, 1]
+            val normalizedX = angleX / 10f
             val maxOffset = (containerSize.toPx() - bubbleSize.toPx()) / 2
             (normalizedX * maxOffset).roundToInt()
         }
-
         val bubbleOffsetY = with(LocalDensity.current) {
-            val normalizedY = angleY / 10f // Normalize to [-1, 1]
+            val normalizedY = angleY / 10f
             val maxOffset = (containerSize.toPx() - bubbleSize.toPx()) / 2
-            (-normalizedY * maxOffset).roundToInt() // Invert Y for upward tilt
+            (-normalizedY * maxOffset).roundToInt()
         }
 
         Box(
             modifier = Modifier
                 .size(containerSize)
-                .background(MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium)
-                .border(2.dp, MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.medium),
+                .background(MaterialTheme.colorScheme.surface)
+                .border(2.dp, MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
-            // Draw grid center lines
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val center = size / 2f
                 drawLine(
@@ -153,7 +166,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            // Bubble indicator
             Box(
                 modifier = Modifier
                     .size(bubbleSize)
@@ -162,12 +174,24 @@ class MainActivity : ComponentActivity() {
                     .border(2.dp, MaterialTheme.colorScheme.onSecondary, CircleShape)
             )
 
-            // Display current angles
             Text(
                 text = "X: %.2f°, Y: %.2f°".format(angleX, angleY),
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+    }
+
+    @Composable
+    fun MaxMinValues(angleHistoryX: List<Float>, angleHistoryY: List<Float>) {
+        val maxX = angleHistoryX.maxOrNull() ?: 0f
+        val minX = angleHistoryX.minOrNull() ?: 0f
+        val maxY = angleHistoryY.maxOrNull() ?: 0f
+        val minY = angleHistoryY.minOrNull() ?: 0f
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Max X: %.2f°, Min X: %.2f°".format(maxX, minX), style = MaterialTheme.typography.bodyLarge)
+            Text("Max Y: %.2f°, Min Y: %.2f°".format(maxY, minY), style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
